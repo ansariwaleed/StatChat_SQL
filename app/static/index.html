@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StatChat — Data Analytics Platform</title>
+    <meta name="description" content="Local-first data analytics. Upload CSVs, query with natural language, get SQL-backed visual insights.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="/static/app.js?v=19" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <link rel="stylesheet" href="/static/styles.css?v=11">
+</head>
+<body>
+    <!-- ==================== LANDING PAGE ==================== -->
+    <div class="landing-page" id="landing-page">
+        <header class="l-header">
+            <div class="l-logo">
+                <span class="logo-mark">SC</span>
+                <span class="logo-text">STATCHAT</span>
+            </div>
+            <div class="system-status">
+                <span class="status-dot online"></span>
+                <span class="status-text">System Active</span>
+            </div>
+        </header>
+
+        <main class="l-main">
+            <!-- HERO SECTION -->
+            <section class="l-section l-hero reveal-on-scroll">
+                <span class="l-label">LOCAL-FIRST DATA ANALYTICS</span>
+                <h1 class="hero-title">Query your data<br>with natural language.</h1>
+                <p class="l-desc">Upload CSV datasets into a local SQLite database. Ask questions in plain English. Get SQL-backed answers with visual insights. Your raw data never touches the LLM.</p>
+                <button class="btn-primary glow-on-hover" id="launch-workspace-btn">Open Workspace<span class="btn-arrow">&rarr;</span></button>
+            </section>
+
+            <hr class="l-divider">
+
+            <!-- WORKFLOW SECTION -->
+            <section class="l-section reveal-on-scroll">
+                <h2>HOW IT WORKS</h2>
+                <div class="timeline-container">
+                    <div class="timeline-item reveal-on-scroll" style="transition-delay: 100ms;">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content"><span class="p-num">01</span> <strong>Ingest:</strong> CSV &rarr; SQLite</div>
+                    </div>
+                    <div class="timeline-item reveal-on-scroll" style="transition-delay: 200ms;">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content"><span class="p-num">02</span> <strong>Schema:</strong> Extracted & sent via MCP</div>
+                    </div>
+                    <div class="timeline-item reveal-on-scroll" style="transition-delay: 300ms;">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content"><span class="p-num">03</span> <strong>SQL:</strong> Generated & Validated</div>
+                    </div>
+                    <div class="timeline-item reveal-on-scroll" style="transition-delay: 400ms;">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content"><span class="p-num">04</span> <strong>Execute:</strong> Run locally</div>
+                    </div>
+                    <div class="timeline-item reveal-on-scroll" style="transition-delay: 500ms;">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content"><span class="p-num">05</span> <strong>Insights:</strong> Charted & Explained</div>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="l-divider">
+
+            <!-- ARCHITECTURE & MCP SECTION -->
+            <section class="l-section reveal-on-scroll">
+                <h2>ARCHITECTURE & MCP</h2>
+                <p class="mcp-highlight">Powered by <strong>Model Context Protocol (MCP)</strong> for secure, standard integration between LLMs and local databases.</p>
+                <div class="arch-grid-wide">
+                    <div class="arch-card glow-on-hover reveal-on-scroll" style="transition-delay: 100ms;">
+                        <span class="arch-label">Supervisor</span>
+                        <span class="arch-value">LangGraph</span>
+                        <span class="arch-desc">Orchestrates workflow</span>
+                    </div>
+                    <div class="arch-card glow-on-hover reveal-on-scroll" style="transition-delay: 200ms;">
+                        <span class="arch-label">Generator</span>
+                        <span class="arch-value">SQL Agent</span>
+                        <span class="arch-desc">NL &rarr; SQL via MCP</span>
+                    </div>
+                    <div class="arch-card glow-on-hover reveal-on-scroll" style="transition-delay: 300ms;">
+                        <span class="arch-label">Sandbox</span>
+                        <span class="arch-value">Python Exec</span>
+                        <span class="arch-desc">Local execution</span>
+                    </div>
+                    <div class="arch-card glow-on-hover reveal-on-scroll" style="transition-delay: 400ms;">
+                        <span class="arch-label">Compiler</span>
+                        <span class="arch-value">Report Agent</span>
+                        <span class="arch-desc">Charts & Insights</span>
+                    </div>
+                </div>
+            </section>
+
+            <hr class="l-divider">
+
+            <!-- RECRUITER / TECH STACK SECTION -->
+            <section class="l-section reveal-on-scroll">
+                <h2>FOR RECRUITERS</h2>
+                <p class="recruiter-note">This portfolio project demonstrates advanced AI orchestration, clean architecture, and modern UX engineering.</p>
+                <div class="stack-tags">
+                    <span class="stack-tag glow-on-hover">FastAPI</span>
+                    <span class="stack-tag glow-on-hover">SQLAlchemy</span>
+                    <span class="stack-tag glow-on-hover">SQLite</span>
+                    <span class="stack-tag glow-on-hover">LangGraph</span>
+                    <span class="stack-tag glow-on-hover">Gemini API</span>
+                    <span class="stack-tag glow-on-hover">Vanilla JS/CSS</span>
+                </div>
+            </section>
+        </main>
+
+        <footer class="l-footer">
+            <span>StatChat &copy; 2026</span>
+            <span>FastAPI &middot; SQLAlchemy &middot; SQLite &middot; LangGraph &middot; Gemini</span>
+        </footer>
+    </div>
+
+    <!-- ==================== WORKSPACE ==================== -->
+    <div class="app-container" id="app-container" style="display: none;">
+        <header class="w-header">
+            <div class="w-header-left">
+                <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <button class="l-logo" id="home-btn" style="background: none; border: none; cursor: pointer; padding: 0; outline: none;" title="Return to Home">
+                    <span class="logo-mark">SC</span>
+                    <span class="logo-text">STATCHAT</span>
+                </button>
+            </div>
+            
+            <div class="header-view-toggle" id="header-view-toggle" style="display: none; background: var(--border); padding: 4px; border-radius: 6px; display: flex; gap: 4px;">
+                <button class="view-toggle-btn active" id="header-nav-dashboard" onclick="switchWorkspaceTab('dashboard')">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </button>
+                <button class="view-toggle-btn" id="header-nav-chat" onclick="switchWorkspaceTab('chat')">
+                    <i class="fa-solid fa-message"></i> SQL Chat
+                </button>
+            </div>
+            
+            <div class="system-status">
+                <span class="status-indicator online"></span>
+                <span class="status-text">Connected to Database (SQLite)</span>
+            </div>
+        </header>
+
+        <main class="app-workspace">
+            <!-- ========= SIDEBAR ========= -->
+            <aside class="left-panel" id="left-panel">
+                <div class="sb-section">
+                    <div class="sb-label">UPLOAD</div>
+                    <div class="drop-zone" id="drop-zone">
+                        <i class="fa-solid fa-arrow-up-from-bracket"></i>
+                        <span class="drop-text">Drop CSV or <u>browse</u></span>
+                        <input type="file" id="file-input" accept=".csv" class="file-input">
+                    </div>
+                    <div class="upload-progress-container" id="upload-progress-container" style="display: none;">
+                        <div class="progress-bar-wrapper">
+                            <div class="progress-bar" id="progress-bar"></div>
+                        </div>
+                        <span id="upload-status" class="upload-status">Uploading...</span>
+                    </div>
+                </div>
+
+                <div class="sb-section sb-tables">
+                    <div class="sb-label-row">
+                        <span class="sb-label">TABLES</span>
+                        <button class="icon-btn" id="refresh-tables-btn" title="Refresh tables">
+                            <i class="fa-solid fa-rotate"></i>
+                        </button>
+                    </div>
+                    <div class="tables-list-container" id="tables-list-container">
+                        <div class="empty-state"><p>No tables loaded.</p></div>
+                    </div>
+                </div>
+
+                <div class="sb-section" id="schema-card" style="display: none;">
+                    <div class="sb-label" id="schema-table-title">SCHEMA</div>
+                    <div class="schema-columns-container" id="schema-columns-container"></div>
+                </div>
+            </aside>
+
+            <!-- ========= MAIN CONTENT ========= -->
+            <section class="right-panel">
+                <!-- Dashboard Tab -->
+                <div class="workspace-content active" id="workspace-dashboard">
+                        <div class="dashboard-header" style="padding: 24px; border-bottom: 1px solid var(--border);">
+                            <h2>Custom Dashboard & EDA</h2>
+                            <p style="color: var(--text-secondary); margin-top: 8px;">Explore your dataset and view pinned insights from your chat sessions.</p>
+                        </div>
+                        
+                        <div class="dashboard-empty-state" id="dashboard-empty-state" style="padding: 24px;">
+                            <p>Select a table from the sidebar to view early EDA and pinned items.</p>
+                        </div>
+
+                        <!-- EDA / Overview Section (Power BI Style Grid) -->
+                        <div class="dashboard-layout" id="dashboard-layout" style="display: none; padding: 24px 32px; border-bottom: 1px solid var(--border);">
+                            <h3 style="font-family: var(--mono); font-size: 12px; color: var(--text-secondary); letter-spacing: 0.15em; margin-bottom: 16px;">
+                                DATASET OVERVIEW & EDA
+                            </h3>
+                            
+                            <!-- Dense grid layout for Power BI feel (1px gaps act as borders) -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border);">
+                                
+                                <!-- KPI Box -->
+                                <div style="background: var(--bg); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; min-height: 220px;">
+                                    <div style="font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-bottom: 8px;">TOTAL ROWS</div>
+                                    <div id="kpi-rows" style="font-size: 32px; font-weight: bold; color: var(--white); margin-bottom: 16px;">&mdash;</div>
+                                    <div style="font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-bottom: 8px;">COLUMNS</div>
+                                    <div id="kpi-cols" style="font-size: 24px; font-weight: bold; color: var(--text-secondary);">&mdash;</div>
+                                </div>
+                                
+                                <!-- Container for dynamic EDA charts -->
+                                <div id="eda-charts-container" style="display: contents;"></div>
+                            </div>
+                            
+                            <!-- Preview Table spans full width below the grid -->
+                            <div style="border: 1px solid var(--border); border-top: none; background: var(--bg); display: flex; flex-direction: column; max-height: 250px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface);">
+                                    <span style="font-family: var(--mono); font-size: 10px; color: var(--text-muted); letter-spacing: 0.1em;">[DATA PREVIEW]</span>
+                                    <span style="font-family: var(--mono); font-size: 9px; color: var(--text-muted);">TOP 10 ROWS</span>
+                                </div>
+                                <div style="overflow-x: auto; overflow-y: auto;">
+                                    <table class="data-table" style="font-size: 11px; white-space: nowrap; width: 100%; border: none;">
+                                        <thead id="preview-data-thead" style="border-top: none;"></thead>
+                                        <tbody id="preview-data-tbody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Hidden to satisfy legacy app.js references without throwing errors -->
+                            <div style="display:none;">
+                                <table class="data-table"><tbody id="stats-summary-body"></tbody></table>
+                            </div>
+                        </div>
+                </div>
+
+                <!-- Chat/Query Tab -->
+                <div class="workspace-content" id="workspace-chat" style="display: none; flex-direction: row; position: relative;">
+                    <!-- Chat History Sidebar -->
+                    <div class="chat-sidebar" id="chat-sidebar" style="transition: all var(--ease);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-family: var(--mono); font-size: 10px; color: var(--text-muted); letter-spacing: 0.1em;">CHAT SESSIONS</span>
+                            <button id="hide-chat-sidebar-btn" class="icon-btn" title="Hide Sidebar" style="font-size: 12px; padding: 4px;">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                        </div>
+                        <button class="new-chat-btn" id="new-chat-btn">
+                            <i class="fa-solid fa-plus"></i> New Chat
+                        </button>
+                        <div class="chat-sessions-list" id="chat-sessions-list">
+                            <!-- Populated via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Main Chat Area -->
+                    <div class="chat-container" style="flex: 1; position: relative;">
+                        <button id="show-chat-sidebar-btn" class="icon-btn" title="Show Sidebar" style="position: absolute; top: 16px; left: 16px; z-index: 10; display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 6px;">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                        <div class="chat-messages" id="chat-messages">
+                            <div class="message assistant-message first-message">
+                                <div class="msg-avatar">AI</div>
+                                <div class="msg-bubble">
+                                    <p>Ready. Select a table and ask analytical questions. I will generate SQL, execute it locally, and explain the results.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="query-suggestions" id="query-suggestions" style="display: none;">
+                            <span class="suggestion-label">Suggestions</span>
+                            <div class="chips-wrapper" id="chips-wrapper"></div>
+                        </div>
+
+                        <div class="chat-input-panel">
+                            <div class="chat-controls" style="margin-bottom: 8px;">
+                                <label style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">Mode:</label>
+                                <select id="chat-mode-select" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 0; padding: 4px; font-size: 11px; outline: none;">
+                                    <option value="analysis">Read-Only Analysis (Safe)</option>
+                                    <option value="cleaning">Data Cleaning (Mutations Allowed)</option>
+                                </select>
+                            </div>
+                            <form id="chat-form" class="chat-form">
+                                <input type="text" id="chat-input" placeholder="Ask a question about your data..." required disabled>
+                                <button type="submit" id="send-btn" class="send-btn" disabled>
+                                    <i class="fa-solid fa-arrow-right"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/app.js?v=17"></script>
+</body>
+</html>
