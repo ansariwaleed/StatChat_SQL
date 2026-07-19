@@ -239,8 +239,20 @@ async def chat_query(request: ChatRequest, db: Session = Depends(get_db)):
     """
     Ask a natural language question about the imported database schemas
     and receive an SQL query, execution results, and text explanation.
+    Supports dialogue memory and multi-query visualizations.
     """
     try:
+        # Load conversation history first (excluding current message)
+        history = []
+        if request.session_id:
+            db_messages = db.query(ChatMessage).filter(ChatMessage.session_id == request.session_id).order_by(ChatMessage.created_at.asc()).all()
+            for m in db_messages:
+                history.append({
+                    "role": m.role,
+                    "content": m.content,
+                    "sql_query": m.sql_query
+                })
+
         # Generate title for new chat
         if request.session_id:
             session = db.query(ChatSession).filter(ChatSession.id == request.session_id).first()
@@ -263,9 +275,9 @@ async def chat_query(request: ChatRequest, db: Session = Depends(get_db)):
         db.add(user_msg)
         db.commit()
 
-        # Process via LLM
-        result = process_analytical_question(request.question, active_table=request.table_name, mode=request.mode)
-        if "error" in result and not result.get("sql"):
+        # Process via LLM (incorporating history context)
+        result = process_analytical_question(request.question, active_table=request.table_name, mode=request.mode, history=history)
+        if "error" in result and not result.get("sql") and not result.get("is_multi_query"):
             # Save error message
             err_msg = ChatMessage(
                 session_id=request.session_id,
@@ -277,14 +289,24 @@ async def chat_query(request: ChatRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail=result["error"])
             
         # Save AI message
-        ai_msg = ChatMessage(
-            session_id=request.session_id,
-            role="assistant",
-            content=result.get("explanation", ""),
-            sql_query=result.get("sql"),
-            results_json=json.dumps(result.get("results")) if result.get("results") else None,
-            explanation=result.get("explanation")
-        )
+        if result.get("is_multi_query"):
+            ai_msg = ChatMessage(
+                session_id=request.session_id,
+                role="assistant",
+                content=result.get("explanation", ""),
+                sql_query=json.dumps([q["sql"] for q in result.get("queries", [])]),
+                results_json=json.dumps(result.get("queries")),
+                explanation=result.get("explanation")
+            )
+        else:
+            ai_msg = ChatMessage(
+                session_id=request.session_id,
+                role="assistant",
+                content=result.get("explanation", ""),
+                sql_query=result.get("sql"),
+                results_json=json.dumps(result.get("results")) if result.get("results") else None,
+                explanation=result.get("explanation")
+            )
         db.add(ai_msg)
         db.commit()
         

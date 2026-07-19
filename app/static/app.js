@@ -477,8 +477,10 @@ function renderDashboardView() {
     // 1. KPI Box
     const kpiRows = document.getElementById('kpi-rows');
     const kpiCols = document.getElementById('kpi-cols');
+    const kpiTable = document.getElementById('kpi-table');
     if (kpiRows) kpiRows.textContent = currentOverviewData.row_count.toLocaleString();
     if (kpiCols) kpiCols.textContent = currentOverviewData.column_count.toLocaleString();
+    if (kpiTable) kpiTable.textContent = activeTable;
 
     // 2. Dynamic Power BI Style Charts
     const edaContainer = document.getElementById('eda-charts-container');
@@ -492,7 +494,8 @@ function renderDashboardView() {
                 if (chartCount >= 3 || data.length === 0) continue;
                 
                 const box = document.createElement('div');
-                box.style = "background: var(--bg); display: flex; flex-direction: column; padding: 16px; min-height: 200px; min-width: 0; overflow: hidden;";
+                box.className = 'dashboard-report-card';
+                box.style = "min-height: 220px; display: flex; flex-direction: column; overflow: hidden; justify-content: space-between;";
                 box.innerHTML = `<div style="font-family: var(--mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; text-align: center;">${colName} Distribution</div>`;
                 
                 const chartDiv = document.createElement('div');
@@ -514,6 +517,7 @@ function renderDashboardView() {
                     dataLabels: { enabled: false },
                     legend: { show: false },
                     tooltip: { theme: 'dark', style: { fontFamily: 'var(--mono)' } },
+                    plotOptions: { pie: { donut: { size: '70%' } } },
                     colors: CHART_COLORS
                 }).render();
                 
@@ -521,12 +525,20 @@ function renderDashboardView() {
             }
         }
         
-        // Numeric Summary Bar Chart (1 Chart for top 5 numeric averages)
+        // Numeric Summary Bar Chart (1 Chart for top 5 numeric averages, filtering out IDs/Codes to avoid scaling issue)
         if (currentOverviewData.numeric_summary && currentOverviewData.numeric_summary.length > 0) {
-            const topNumerics = currentOverviewData.numeric_summary.slice(0, 5);
+            let topNumerics = currentOverviewData.numeric_summary.filter(n => {
+                const colLower = n.column.toLowerCase();
+                return !colLower.includes('id') && !colLower.includes('zip') && !colLower.includes('code') && !colLower.includes('lat') && !colLower.includes('long') && !colLower.includes('phone') && !colLower.includes('year') && !colLower.includes('post');
+            });
+            if (topNumerics.length === 0) {
+                topNumerics = currentOverviewData.numeric_summary;
+            }
+            topNumerics = topNumerics.slice(0, 5);
             
             const box = document.createElement('div');
-            box.style = "background: var(--bg); display: flex; flex-direction: column; padding: 16px; min-height: 200px; grid-column: span auto; min-width: 0; overflow: hidden;";
+            box.className = 'dashboard-report-card';
+            box.style = "min-height: 220px; display: flex; flex-direction: column; overflow: hidden; justify-content: space-between;";
             box.innerHTML = `<div style="font-family: var(--mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; text-align: center;">Average Values</div>`;
             
             const chartDiv = document.createElement('div');
@@ -546,7 +558,7 @@ function renderDashboardView() {
                 grid: { show: false },
                 theme: { mode: 'dark' },
                 dataLabels: { enabled: true, style: { fontSize: '9px', fontFamily: 'var(--mono)', colors: ['var(--text)'] }, offsetY: -20, background: { enabled: false } },
-                plotOptions: { bar: { borderRadius: 0, distributed: true, dataLabels: { position: 'top' } } },
+                plotOptions: { bar: { borderRadius: 4, distributed: true, columnWidth: '40%', dataLabels: { position: 'top' } } },
                 legend: { show: false },
                 tooltip: { theme: 'dark', style: { fontFamily: 'var(--mono)' } },
                 colors: CHART_COLORS
@@ -575,13 +587,93 @@ function renderDashboardView() {
                 const tr = document.createElement('tr');
                 headers.forEach(h => {
                     const td = document.createElement('td');
-                    td.textContent = row[h] !== null ? row[h] : 'â€”';
+                    td.textContent = row[h] !== null ? row[h] : '—';
                     tr.appendChild(td);
                 });
                 previewDataTbody.appendChild(tr);
             });
         }
     }
+
+    // 4. Pinned Insights
+    renderPinnedInsights();
+}
+
+function renderPinnedInsights() {
+    const container = document.getElementById('pinned-insights-grid');
+    if (!container) return;
+    
+    const storageKey = `pinned_insights_${activeTable}`;
+    let pinned = [];
+    try {
+        pinned = JSON.parse(localStorage.getItem(storageKey)) || [];
+    } catch(e) {
+        pinned = [];
+    }
+    
+    if (pinned.length === 0) {
+        container.innerHTML = `
+            <div style="background: rgba(255,255,255,0.01); border: 1px dashed var(--border); border-radius: 8px; padding: 32px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 140px; grid-column: 1 / -1;">
+                <i class="fa-solid fa-thumbtack" style="font-size: 20px; color: var(--text-muted); opacity: 0.4;"></i>
+                <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">No Pinned Insights</div>
+                <div style="font-size: 11px; color: var(--text-muted); max-width: 250px;">Ask questions in the SQL Chat tab and pin visual charts to build your dynamic dashboard.</div>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = '';
+    pinned.forEach((item, idx) => {
+        const card = document.createElement('div');
+        card.className = 'dashboard-report-card';
+        card.style = 'background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px;';
+        
+        const cardHeader = document.createElement('div');
+        cardHeader.style = 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px;';
+        cardHeader.innerHTML = `
+            <div style="display:flex; flex-direction:column; max-width:85%;">
+                <strong style="font-size: 12px; font-family: var(--mono); color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.question}</strong>
+            </div>
+            <button class="remove-pin-btn" data-index="${idx}" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:11px;" title="Remove Pin">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        `;
+        card.appendChild(cardHeader);
+        
+        if (item.explanation) {
+            const exp = document.createElement('div');
+            exp.style = 'font-size: 11px; color: var(--text-secondary); line-height: 1.4; max-height: 50px; overflow: hidden; text-overflow: ellipsis;';
+            exp.textContent = item.explanation.substring(0, 120) + (item.explanation.length > 120 ? '...' : '');
+            card.appendChild(exp);
+        }
+        
+        const vizId = 'pinned-viz-' + Date.now() + '-' + idx;
+        const chartDiv = document.createElement('div');
+        chartDiv.id = vizId;
+        chartDiv.style = 'min-height: 180px; width: 100%;';
+        card.appendChild(chartDiv);
+        
+        container.appendChild(card);
+        
+        const removeBtn = card.querySelector('.remove-pin-btn');
+        removeBtn.onclick = () => {
+            pinned.splice(idx, 1);
+            localStorage.setItem(storageKey, JSON.stringify(pinned));
+            renderPinnedInsights();
+            showToast("Pinned insight removed.", "success");
+        };
+        
+        setTimeout(() => {
+            if (item.results) {
+                const chartData = analyzeResultsForChart(item.results, item.chartType || 'auto');
+                if (chartData) {
+                    renderInlineChatChart(vizId, chartData, item.chartType || 'auto', false);
+                } else {
+                    chartDiv.innerHTML = '<p style="color:var(--text-muted); font-size:10px; text-align:center; padding-top:40px;">Data summary table in SQL Chat.</p>';
+                }
+            }
+        }, 100);
+    });
 }
 
 // Chat Sessions Management
@@ -819,13 +911,15 @@ function removeTypingIndicator(id) {
 function detectChartType(question) {
     const q = (question || '').toLowerCase();
     if (q.includes('pie') || q.includes('donut')) return 'pie';
+    if (q.includes('scatter') || q.includes('correlation') || q.includes('relationship') || q.includes('vs')) return 'scatter';
+    if (q.includes('heatmap') || q.includes('density') || q.includes('matrix')) return 'heatmap';
     if (q.includes('line') || q.includes('trend') || q.includes('over time')) return 'line';
     if (q.includes('area')) return 'area';
     if (q.includes('bar') || q.includes('chart') || q.includes('graph') || q.includes('plot') || q.includes('visual') || q.includes('histogram') || q.includes('distribution')) return 'bar';
     return 'auto';
 }
 
-function analyzeResultsForChart(results) {
+function analyzeResultsForChart(results, chartType = 'auto') {
     if (!results || results.length === 0 || results.length > 50) return null;
     const columns = Object.keys(results[0]);
     if (columns.length < 2) return null;
@@ -841,11 +935,28 @@ function analyzeResultsForChart(results) {
         else labelCols.push(col);
     });
 
+    // Special parsing structure for Scatter Plot
+    if (chartType === 'scatter') {
+        if (numericCols.length >= 2) {
+            return {
+                xCol: numericCols[0],
+                yCol: numericCols[1],
+                series: [{
+                    name: `${numericCols[1]} vs ${numericCols[0]}`,
+                    data: results.map(r => ({
+                        x: parseFloat(r[numericCols[0]]),
+                        y: parseFloat(r[numericCols[1]])
+                    }))
+                }]
+            };
+        }
+    }
+
     if (labelCols.length >= 1 && numericCols.length >= 1) {
         return {
             labelCol: labelCols[0],
             numericCols: numericCols,
-            labels: results.map(r => String(r[labelCols[0]] !== null ? r[labelCols[0]] : 'â€”')),
+            labels: results.map(r => String(r[labelCols[0]] !== null ? r[labelCols[0]] : '—')),
             series: numericCols.map(col => ({
                 name: col,
                 data: results.map(r => r[col] !== null && r[col] !== undefined ? parseFloat(r[col]) : 0)
@@ -882,6 +993,34 @@ function renderInlineChatChart(containerId, chartData, chartType, animate = true
             legend: { position: 'bottom', labels: { colors: '#888888' } },
             tooltip: { theme: 'dark', style: { fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" } },
             dataLabels: { enabled: true, style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" }, dropShadow: { enabled: false } }
+        };
+    } else if (resolvedType === 'scatter') {
+        options = {
+            series: chartData.series,
+            chart: { type: 'scatter', height: 300, foreColor: '#888888', background: 'transparent', fontFamily: "'JetBrains Mono', monospace", toolbar: {show: false} },
+            colors: CHART_COLORS,
+            xaxis: {
+                tickAmount: 5,
+                labels: { formatter: val => parseFloat(val).toFixed(1), style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } },
+                title: { text: chartData.xCol, style: { color: '#888888', fontFamily: "'JetBrains Mono', monospace" } }
+            },
+            yaxis: {
+                title: { text: chartData.yCol, style: { color: '#888888', fontFamily: "'JetBrains Mono', monospace" } },
+                labels: { style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } }
+            },
+            grid: { borderColor: '#27272a', xaxis: { lines: { show: true } }, yaxis: { lines: { show: true } } },
+            tooltip: { theme: 'dark', style: { fontFamily: "'JetBrains Mono', monospace" } }
+        };
+    } else if (resolvedType === 'heatmap') {
+        options = {
+            series: chartData.series,
+            chart: { type: 'heatmap', height: 300, foreColor: '#888888', background: 'transparent', fontFamily: "'JetBrains Mono', monospace", toolbar: {show: false} },
+            colors: CHART_COLORS,
+            dataLabels: { enabled: true, style: { fontSize: '9px', fontFamily: "'JetBrains Mono', monospace" } },
+            xaxis: { labels: { style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } } },
+            yaxis: { labels: { style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } } },
+            grid: { borderColor: '#27272a' },
+            tooltip: { theme: 'dark', style: { fontFamily: "'JetBrains Mono', monospace" } }
         };
     } else {
         // Smart Y-axis scaling for massive differences
@@ -968,181 +1107,272 @@ function appendChatResult(data, animateChart = true) {
         bubble.appendChild(explanationEl);
     }
     
-    // Affected rows (for Data Cleaning Mode)
-    if (data.results && data.results.length === 1 && data.results[0].affected_rows !== undefined) {
-        const successMsg = document.createElement('div');
-        successMsg.innerHTML = `<p style="color: #10b981; font-weight: bold;"><i class="fa-solid fa-check-circle"></i> Success: ${data.results[0].affected_rows} rows affected.</p>`;
-        bubble.appendChild(successMsg);
-    }
-
-    // 2. SQL Code
-    if (data.sql) {
-        const sqlContainer = document.createElement('div');
-        sqlContainer.className = 'sql-code-block';
+    // Check if it is a Multi-Query Dashboard
+    if (data.is_multi_query && data.queries) {
+        const grid = document.createElement('div');
+        grid.className = 'dashboard-report-grid';
+        grid.style = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 16px;';
         
-        sqlContainer.innerHTML = `
-            <div class="sql-header">
-                <span>SQL Query</span>
-                <div>
-                    <button class="edit-sql-btn" title="Edit & Run" style="background:none; border:none; color:var(--text-muted); cursor:pointer; margin-right:8px;"><i class="fa-solid fa-pen"></i></button>
-                    <button class="copy-sql-btn" title="Copy SQL" style="background:none; border:none; color:var(--text-muted); cursor:pointer;"><i class="fa-regular fa-copy"></i></button>
-                </div>
-            </div>
-            <div class="sql-content-area">
-                <pre><code class="language-sql">${data.sql}</code></pre>
-            </div>
-        `;
-        
-        // Copy SQL
-        const copyBtn = sqlContainer.querySelector('.copy-sql-btn');
-        copyBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(data.sql);
-            copyBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
-            setTimeout(() => copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i>', 2000);
+        data.queries.forEach((q, idx) => {
+            const card = document.createElement('div');
+            card.className = 'dashboard-report-card';
+            card.style = 'background: var(--surface); border: 1px solid var(--border); padding: 12px; display: flex; flex-direction: column; gap: 8px;';
+            
+            const cardHeader = document.createElement('div');
+            cardHeader.style = 'display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 6px;';
+            cardHeader.innerHTML = `
+                <strong style="font-size: 13px; font-family: var(--mono); color: var(--text);">${q.title}</strong>
+                <span class="table-badge" style="font-size: 9px; padding: 2px 6px; background: var(--border); color: var(--text-muted); font-family: var(--mono);">${q.chart_type.toUpperCase()}</span>
+            `;
+            card.appendChild(cardHeader);
+            
+            // Visual container
+            const vizId = 'multi-viz-' + Date.now() + '-' + idx;
+            const chartDiv = document.createElement('div');
+            chartDiv.id = vizId;
+            chartDiv.style = 'min-height: 200px; width: 100%;';
+            card.appendChild(chartDiv);
+            
+            // Toggleable SQL source code
+            const codeToggle = document.createElement('details');
+            codeToggle.style = 'font-size: 11px; font-family: var(--mono); color: var(--text-muted); cursor: pointer;';
+            codeToggle.innerHTML = `
+                <summary style="outline:none; margin-bottom:4px;">SQL Source</summary>
+                <pre style="background:var(--bg); border:1px solid var(--border); padding:6px; overflow-x:auto; margin:0;"><code class="language-sql">${q.sql}</code></pre>
+            `;
+            card.appendChild(codeToggle);
+            
+            grid.appendChild(card);
+            
+            // Render chart dynamically
+            setTimeout(() => {
+                const subChartData = analyzeResultsForChart(q.results, q.chart_type);
+                if (subChartData) {
+                    renderInlineChatChart(vizId, subChartData, q.chart_type, animateChart);
+                } else {
+                    chartDiv.innerHTML = '<p style="color:var(--text-muted); font-size:11px; text-align:center; padding-top:40px;">No numerical trends. (Table details available in context)</p>';
+                }
+            }, 100);
         });
         
-        // Edit SQL
-        const editBtn = sqlContainer.querySelector('.edit-sql-btn');
-        const sqlContentArea = sqlContainer.querySelector('.sql-content-area');
-        editBtn.addEventListener('click', () => {
-            if (sqlContentArea.querySelector('textarea')) return; // already editing
+        bubble.appendChild(grid);
+    } else {
+        // Standard single query flow
+        // Affected rows (for Data Cleaning Mode)
+        if (data.results && data.results.length === 1 && data.results[0].affected_rows !== undefined) {
+            const successMsg = document.createElement('div');
+            successMsg.innerHTML = `<p style="color: #10b981; font-weight: bold;"><i class="fa-solid fa-check-circle"></i> Success: ${data.results[0].affected_rows} rows affected.</p>`;
+            bubble.appendChild(successMsg);
+        }
+
+        // 2. SQL Code
+        if (data.sql) {
+            const sqlContainer = document.createElement('div');
+            sqlContainer.className = 'sql-code-block';
             
-            sqlContentArea.innerHTML = `
-                <textarea class="edit-sql-textarea" style="width: 100%; min-height: 100px; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 12px; font-family: var(--mono); font-size: 13px; resize: vertical;">${data.sql}</textarea>
-                <div style="display:flex; justify-content:flex-end; padding-top:8px;">
-                    <button class="run-edited-sql-btn" style="background: var(--white); color: var(--black); border: none; padding: 6px 12px; cursor: pointer; font-size: 12px; font-family: var(--mono); font-weight: bold;">Run Query</button>
+            sqlContainer.innerHTML = `
+                <div class="sql-header">
+                    <span>SQL Query</span>
+                    <div>
+                        <button class="edit-sql-btn" title="Edit & Run" style="background:none; border:none; color:var(--text-muted); cursor:pointer; margin-right:8px;"><i class="fa-solid fa-pen"></i></button>
+                        <button class="copy-sql-btn" title="Copy SQL" style="background:none; border:none; color:var(--text-muted); cursor:pointer;"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+                <div class="sql-content-area">
+                    <pre><code class="language-sql">${data.sql}</code></pre>
                 </div>
             `;
             
-            const runBtn = sqlContentArea.querySelector('.run-edited-sql-btn');
-            const textarea = sqlContentArea.querySelector('.edit-sql-textarea');
+            // Copy SQL
+            const copyBtn = sqlContainer.querySelector('.copy-sql-btn');
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(data.sql);
+                copyBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                setTimeout(() => copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i>', 2000);
+            });
             
-            runBtn.addEventListener('click', async () => {
-                const newSql = textarea.value.trim();
-                if (!newSql) return;
+            // Edit SQL
+            const editBtn = sqlContainer.querySelector('.edit-sql-btn');
+            const sqlContentArea = sqlContainer.querySelector('.sql-content-area');
+            editBtn.addEventListener('click', () => {
+                if (sqlContentArea.querySelector('textarea')) return; // already editing
                 
-                runBtn.disabled = true;
-                runBtn.textContent = 'Running...';
+                sqlContentArea.innerHTML = `
+                    <textarea class="edit-sql-textarea" style="width: 100%; min-height: 100px; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 12px; font-family: var(--mono); font-size: 13px; resize: vertical;">${data.sql}</textarea>
+                    <div style="display:flex; justify-content:flex-end; padding-top:8px;">
+                        <button class="run-edited-sql-btn" style="background: var(--white); color: var(--black); border: none; padding: 6px 12px; cursor: pointer; font-size: 12px; font-family: var(--mono); font-weight: bold;">Run Query</button>
+                    </div>
+                `;
                 
-                try {
-                    const res = await fetch("/chat/run_sql", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            sql: newSql,
-                            table_name: activeTable,
-                            session_id: activeSessionId,
-                            question: "Manual Edit"
-                        })
-                    });
-                    const resData = await res.json();
+                const runBtn = sqlContentArea.querySelector('.run-edited-sql-btn');
+                const textarea = sqlContentArea.querySelector('.edit-sql-textarea');
+                
+                runBtn.addEventListener('click', async () => {
+                    const newSql = textarea.value.trim();
+                    if (!newSql) return;
                     
-                    if (resData.error) {
-                        showToast(resData.error, "error");
+                    runBtn.disabled = true;
+                    runBtn.textContent = 'Running...';
+                    
+                    try {
+                        const res = await fetch("/chat/run_sql", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                sql: newSql,
+                                table_name: activeTable,
+                                session_id: activeSessionId,
+                                question: "Manual Edit"
+                            })
+                        });
+                        const resData = await res.json();
+                        
+                        if (resData.error) {
+                            showToast(resData.error, "error");
+                            runBtn.disabled = false;
+                            runBtn.textContent = 'Run Query';
+                        } else {
+                            appendChatResult(resData, true);
+                        }
+                    } catch (e) {
+                        showToast("Execution failed.", "error");
                         runBtn.disabled = false;
                         runBtn.textContent = 'Run Query';
-                    } else {
-                        // Success! Append the new result to the chat
-                        appendChatResult(resData, true);
                     }
-                } catch (e) {
-                    showToast("Execution failed.", "error");
-                    runBtn.disabled = false;
-                    runBtn.textContent = 'Run Query';
-                }
+                });
             });
-        });
 
-        bubble.appendChild(sqlContainer);
-    }
-
-    let chartData = null;
-    let shouldShowChart = false;
-    let chartId = null;
-    const userRequestedChart = detectChartType(data.question || "");
-
-    // 3. Results (Chart or Table)
-    if (data.results && data.results.length > 0 && data.results[0].affected_rows === undefined) {
-        chartData = analyzeResultsForChart(data.results);
-        shouldShowChart = chartData && userRequestedChart !== 'none';
-
-        const vizContainer = document.createElement('div');
-        vizContainer.className = 'results-visualization';
-        
-        if (shouldShowChart) {
-            chartId = 'inline-chart-' + Date.now() + Math.floor(Math.random() * 1000);
-            const typeLabel = userRequestedChart === 'auto' ? 'BAR' : userRequestedChart.toUpperCase();
-            
-            vizContainer.innerHTML = `
-                <div class="inline-chart-section">
-                    <div class="inline-chart-header">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <i class="fa-solid fa-chart-column"></i>
-                            <span>${typeLabel} &mdash; ${chartData.labelCol} vs ${chartData.numericCols.join(', ')}</span>
-                        </div>
-                        <span class="table-badge"><i class="fa-solid fa-database"></i> ${activeTable || 'Dataset'}</span>
-                    </div>
-                    <div id="${chartId}" class="inline-chart"></div>
-                </div>
-            `;
-        } else {
-            // Render basic table for small results
-            let tableHtml = '<div class="table-wrapper"><table class="data-table"><thead><tr>';
-            const keys = Object.keys(data.results[0]);
-            keys.forEach(k => tableHtml += `<th>${k}</th>`);
-            tableHtml += '</tr></thead><tbody>';
-            
-            // max 15 rows for inline
-            data.results.slice(0, 15).forEach(row => {
-                tableHtml += '<tr>';
-                keys.forEach(k => tableHtml += `<td>${row[k]}</td>`);
-                tableHtml += '</tr>';
-            });
-            tableHtml += '</tbody></table></div>';
-            vizContainer.innerHTML = tableHtml;
+            bubble.appendChild(sqlContainer);
         }
-        
-        bubble.appendChild(vizContainer);
-        
-        // Action Buttons (Export)
-        const actionsContainer = document.createElement('div');
-        actionsContainer.className = 'chat-actions';
-        actionsContainer.style.display = 'flex';
-        actionsContainer.style.gap = '8px';
-        actionsContainer.style.marginTop = '12px';
-        
-        const csvBtn = document.createElement('button');
-        csvBtn.className = 'action-btn';
-        csvBtn.innerHTML = '<i class="fa-solid fa-download"></i> Export CSV';
-        csvBtn.style = "background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 4px 8px; font-size: 11px; cursor: pointer;";
-        csvBtn.onclick = () => {
-            const keys = Object.keys(data.results[0]);
-            const csvRows = [keys.join(',')];
-            data.results.forEach(row => {
-                csvRows.push(keys.map(k => `"${String(row[k]).replace(/"/g, '""')}"`).join(','));
-            });
-            const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.setAttribute('hidden', '');
-            a.setAttribute('href', url);
-            a.setAttribute('download', 'export.csv');
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        };
-        actionsContainer.appendChild(csvBtn);
-        
-        bubble.appendChild(actionsContainer);
+
+        let chartData = null;
+        let shouldShowChart = false;
+        let chartId = null;
+        const userRequestedChart = detectChartType(data.question || "");
+
+        // 3. Results (Chart or Table)
+        if (data.results && data.results.length > 0 && data.results[0].affected_rows === undefined) {
+            chartData = analyzeResultsForChart(data.results, userRequestedChart);
+            shouldShowChart = chartData && userRequestedChart !== 'none';
+
+            const vizContainer = document.createElement('div');
+            vizContainer.className = 'results-visualization';
+            
+            if (shouldShowChart) {
+                chartId = 'inline-chart-' + Date.now() + Math.floor(Math.random() * 1000);
+                const typeLabel = userRequestedChart === 'auto' ? 'BAR' : userRequestedChart.toUpperCase();
+                
+                vizContainer.innerHTML = `
+                    <div class="inline-chart-section">
+                        <div class="inline-chart-header">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <i class="fa-solid fa-chart-column"></i>
+                                <span>${typeLabel} &mdash; ${chartData.labelCol || 'Scatter'}</span>
+                            </div>
+                            <span class="table-badge"><i class="fa-solid fa-database"></i> ${activeTable || 'Dataset'}</span>
+                        </div>
+                        <div id="${chartId}" class="inline-chart"></div>
+                    </div>
+                `;
+            } else {
+                // Render basic table for small results
+                let tableHtml = '<div class="table-wrapper"><table class="data-table"><thead><tr>';
+                const keys = Object.keys(data.results[0]);
+                keys.forEach(k => tableHtml += `<th>${k}</th>`);
+                tableHtml += '</tr></thead><tbody>';
+                
+                data.results.slice(0, 15).forEach(row => {
+                    tableHtml += '<tr>';
+                    keys.forEach(k => tableHtml += `<td>${row[k]}</td>`);
+                    tableHtml += '</tr>';
+                });
+                tableHtml += '</tbody></table></div>';
+                vizContainer.innerHTML = tableHtml;
+            }
+            
+            bubble.appendChild(vizContainer);
+            
+            // Action Buttons (Export & Pin)
+            const actionsContainer = document.createElement('div');
+            actionsContainer.className = 'chat-actions';
+            actionsContainer.style.display = 'flex';
+            actionsContainer.style.gap = '8px';
+            actionsContainer.style.marginTop = '12px';
+            
+            const csvBtn = document.createElement('button');
+            csvBtn.className = 'action-btn';
+            csvBtn.innerHTML = '<i class="fa-solid fa-download"></i> Export CSV';
+            csvBtn.style = "background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;";
+            csvBtn.onclick = () => {
+                const keys = Object.keys(data.results[0]);
+                const csvRows = [keys.join(',')];
+                data.results.forEach(row => {
+                    csvRows.push(keys.map(k => `"${String(row[k]).replace(/"/g, '""')}"`).join(','));
+                });
+                const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('hidden', '');
+                a.setAttribute('href', url);
+                a.setAttribute('download', 'export.csv');
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            };
+            actionsContainer.appendChild(csvBtn);
+            
+            // Add Pin to Dashboard button
+            const pinBtn = document.createElement('button');
+            pinBtn.className = 'action-btn pinned-insight-btn';
+            pinBtn.innerHTML = '<i class="fa-solid fa-thumbtack"></i> Pin to Dashboard';
+            pinBtn.style = "background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;";
+            
+            const storageKey = `pinned_insights_${activeTable}`;
+            let currentPinned = [];
+            try { currentPinned = JSON.parse(localStorage.getItem(storageKey)) || []; } catch(e) {}
+            const isAlreadyPinned = currentPinned.some(p => p.question === data.question);
+            if (isAlreadyPinned) {
+                pinBtn.classList.add('pinned');
+                pinBtn.innerHTML = '<i class="fa-solid fa-thumbtack"></i> Pinned';
+            }
+            
+            pinBtn.onclick = () => {
+                let pinnedList = [];
+                try { pinnedList = JSON.parse(localStorage.getItem(storageKey)) || []; } catch(e) {}
+                
+                const existingIdx = pinnedList.findIndex(p => p.question === data.question);
+                if (existingIdx >= 0) {
+                    pinnedList.splice(existingIdx, 1);
+                    pinBtn.classList.remove('pinned');
+                    pinBtn.innerHTML = '<i class="fa-solid fa-thumbtack"></i> Pin to Dashboard';
+                    showToast("Insight unpinned.", "success");
+                } else {
+                    pinnedList.push({
+                        question: data.question,
+                        explanation: data.explanation,
+                        results: data.results,
+                        chartType: userRequestedChart
+                    });
+                    pinBtn.classList.add('pinned');
+                    pinBtn.innerHTML = '<i class="fa-solid fa-thumbtack"></i> Pinned';
+                    showToast("Insight pinned to dashboard!", "success");
+                }
+                localStorage.setItem(storageKey, JSON.stringify(pinnedList));
+                renderPinnedInsights();
+            };
+            
+            actionsContainer.appendChild(pinBtn);
+            bubble.appendChild(actionsContainer);
+        }
+
+        if (shouldShowChart && chartData) {
+            renderInlineChatChart(chartId, chartData, userRequestedChart === 'auto' ? 'bar' : userRequestedChart, animateChart);
+        }
     }
     
     message.appendChild(bubble);
     chatMessages.appendChild(message);
     scrollToBottom();
-
-    if (shouldShowChart && chartData) {
-        renderInlineChatChart(chartId, chartData, userRequestedChart === 'auto' ? 'bar' : userRequestedChart, animateChart);
-    }
 }
 
 // Helpers
