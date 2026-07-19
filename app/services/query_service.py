@@ -127,8 +127,11 @@ def generate_sql(question: str, schema: str, active_table: str = None, mode: str
 def execute_query(sql_query: str) -> list:
     """
     Executes the SQL query on database and returns results as list of dicts.
-    Handles both read and mutation queries.
+    Handles both read and mutation queries. Ensures Decimal and Date objects are JSON serializable.
     """
+    import decimal
+    from datetime import date, datetime
+
     with engine.connect() as conn:
         result = conn.execute(text(sql_query))
         
@@ -137,7 +140,17 @@ def execute_query(sql_query: str) -> list:
             return [{"affected_rows": result.rowcount, "message": "Query executed successfully."}]
         
         keys = result.keys()
-        rows = [dict(zip(keys, row)) for row in result.fetchall()]
+        rows = []
+        for row in result.fetchall():
+            row_dict = {}
+            for k, v in zip(keys, row):
+                if isinstance(v, decimal.Decimal):
+                    row_dict[k] = float(v)
+                elif isinstance(v, (datetime, date)):
+                    row_dict[k] = v.isoformat()
+                else:
+                    row_dict[k] = v
+            rows.append(row_dict)
         return rows
 
 def format_results_for_llm(results: list) -> str:

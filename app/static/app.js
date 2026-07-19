@@ -1023,12 +1023,12 @@ function renderInlineChatChart(containerId, chartData, chartType, animate = true
             tooltip: { theme: 'dark', style: { fontFamily: "'JetBrains Mono', monospace" } }
         };
     } else {
-        // Smart Y-axis scaling for massive differences
+        // Smart Y-axis scaling for massive differences (Note: logarithmic scale is not supported for bar charts in ApexCharts)
         let useLogScale = false;
         let allValues = [];
         chartData.series.forEach(s => allValues.push(...s.data));
         allValues = allValues.filter(v => v > 0);
-        if (allValues.length > 0) {
+        if (allValues.length > 0 && resolvedType !== 'bar') {
             const minVal = Math.min(...allValues);
             const maxVal = Math.max(...allValues);
             if (maxVal / minVal > 1000 && chartData.series.length > 1) {
