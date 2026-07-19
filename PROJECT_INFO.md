@@ -47,6 +47,25 @@ graph TD
 3. The data types are evaluated. If a column contains only integers, it maps to `BIGINT`. If it contains floats, it maps to `FLOAT`. Otherwise, it falls back to `TEXT`.
 4. A dynamic table is created, the rows are inserted in bulk batches, and a SQLite overview profile (row count, categorical value distribution, numerical averages) is compiled.
 
+```text
+[User File Drop]
+       │ (1. Raw CSV file payload via multipart/form-data POST to /upload)
+       ▼
+[upload.py (FastAPI Endpoint)] ──► [csv_service.py (Pandas Ingestion)]
+                                         │
+                                         │ (2. Scan types: e.g. Column "math" = Ints only -> BIGINT, "name" -> TEXT)
+                                         ▼
+                                  [SQLAlchemy Metadata Engine]
+                                         │
+                                         │ (3. Execute CREATE TABLE student_dataset)
+                                         ▼
+                                  [SQLite DB File (analytics_db.db)] 
+                                         │
+                                         │ (4. Bulk insert rows in chunks)
+                                         ▼
+                                  [Data profiling PRAGMAs run] ──► Return row count/averages profile to Client UI
+```
+
 ### B. Natural Language to SQL Generation Loop
 1. The user types a query (e.g., *"What is the average test score by gender?"*).
 2. The endpoint `/chat` fetches the chat history for the active session from the `ChatMessage` table to resolve pronoun references.
@@ -63,6 +82,37 @@ graph TD
 6. The query is validated locally. If the mode is "Analysis Mode" and contains modification keywords (`INSERT`, `UPDATE`, `DROP`), execution is aborted. If it is "Data Cleaning Mode", a table backup clone (`backup_student_dataset`) is created before the mutations run.
 7. The query is executed against the database. The matching records are retrieved as JSON arrays.
 8. The question, generated SQL, and raw output records are sent back to Gemini to produce a human-readable summarization explaining the trends.
+
+```text
+[User Chat Submission]
+       │ (1. Question + session_id POST to /chat)
+       ▼
+[upload.py (FastAPI Endpoint)]
+       │
+       │ (2. Load chat history list & execute PRAGMA table_info columns)
+       ▼
+[query_service.py (Gemini LLM Prompt Compilation)]
+       │
+       │ (3. System Prompt compiles context resources)
+       ▼
+[Google Gemini Model (Translation Node)]
+       │
+       │ (4. Yields structured SQL statement)
+       ▼
+[SQL Safety Validator Node]
+       │
+       │ (5. Validates modification safety constraints)
+       ▼
+[SQLite Local Database Execution]
+       │
+       │ (6. Executes statement and fetches query records)
+       ▼
+[query_service.py (Insight Synthesis Node)]
+       │
+       │ (7. Gemini compiles textual explanation summary from raw records)
+       ▼
+[Client Web UI (Visualization Adapters)] ──► Renders interactive ApexCharts + updates custom Pinned dashboard
+```
 
 ### C. Conversational Memory Mechanism
 To allow natural follow-up questions, the context is preserved across conversational turns:
