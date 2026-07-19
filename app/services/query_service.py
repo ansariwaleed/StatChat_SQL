@@ -2,6 +2,7 @@ import os
 import re
 import json
 from google import genai
+from google.genai import types
 from sqlalchemy import text, inspect
 from app.database.connection import engine
 
@@ -112,14 +113,16 @@ def generate_sql(question: str, schema: str, active_table: str = None, mode: str
     user_prompt = f"Schema:\n{schema}\n\n{history_context}User Question:\n{question}\n\nQuery/JSON Output:"
     
     model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-    interaction = client.interactions.create(
+    response = client.models.generate_content(
         model=model_name,
-        system_instruction=system_prompt,
-        input=user_prompt,
-        generation_config={"temperature": 0.0}
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.0
+        )
     )
     
-    return interaction.output_text.strip()
+    return response.text.strip()
 
 def execute_query(sql_query: str) -> list:
     """
@@ -189,14 +192,16 @@ def generate_explanation(question: str, sql_query: str, results: list, history: 
         f"Explanation:"
     )
     
-    interaction = client.interactions.create(
+    response = client.models.generate_content(
         model=model_name,
-        system_instruction=system_prompt,
-        input=user_prompt,
-        generation_config={"temperature": 0.3}
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.3
+        )
     )
     
-    return interaction.output_text.strip()
+    return response.text.strip()
 
 def process_analytical_question(question: str, active_table: str = None, mode: str = "analysis", history: list = None) -> dict:
     """
