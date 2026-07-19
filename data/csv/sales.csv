@@ -1,0 +1,6 @@
+id,date,category,product,quantity,price,revenue
+1,2023-01-01,Electronics,Laptop,2,1000,2000
+2,2023-01-02,Clothing,T-Shirt,5,20,100
+3,2023-01-03,Electronics,Smartphone,3,500,1500
+4,2023-01-04,Home,Coffee Maker,1,150,150
+5,2023-01-05,Clothing,Jeans,2,50,100

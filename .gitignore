@@ -9,3 +9,7 @@ ENV/
 .pytest_cache/
 .vscode/
 .idea/
+*.db
+5m-Sales-Records/
+500000-Sales-Records/
+
