@@ -69,12 +69,16 @@ def import_csv_to_db(file_path_or_buffer, original_filename: str) -> dict:
     df.columns = [clean_name(col) for col in df.columns]
 
     # Write to database (replace if exists)
-    # This automatically infers data types and creates the table structure
+    # Uses method='multi' with a safe chunksize to stay under SQLite's 999 variable limit
+    num_cols = len(df.columns)
+    safe_chunksize = max(1, 999 // num_cols)  # SQLite SQLITE_MAX_VARIABLE_NUMBER = 999
     df.to_sql(
         name=table_name,
         con=engine,
         if_exists="replace",
-        index=False
+        index=False,
+        method='multi',
+        chunksize=safe_chunksize
     )
     
     return {

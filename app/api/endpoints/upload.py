@@ -1,9 +1,14 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import json
 from app.services.csv_service import import_csv_to_db, get_all_tables
-from app.services.query_service import process_analytical_question, execute_query, generate_explanation
+from app.services.query_service import (
+    process_analytical_question, execute_query, generate_explanation,
+    generate_sql, clean_sql_query, get_database_schema, generate_explanation_stream,
+    generate_followup_suggestions, _execute_with_retry, clear_schema_cache
+)
 from app.database.connection import get_db, engine
 from app.database.models import ChatSession, ChatMessage
 from sqlalchemy.orm import Session
@@ -49,6 +54,8 @@ async def upload_csv(file: UploadFile = File(...)):
         # Read file contents and import into DB
         # file.file is a file-like object
         result = import_csv_to_db(file.file, file.filename)
+        # Invalidate schema cache since a new table was created
+        clear_schema_cache()
         return {
             "message": "CSV imported successfully.",
             "data": result
@@ -109,6 +116,9 @@ async def delete_table(table_name: str, db: Session = Depends(get_db)):
         # 2. Drop the table
         with engine.begin() as conn:
             conn.execute(text(f'DROP TABLE "{table_name}"'))
+        
+        # Invalidate schema cache since a table was deleted
+        clear_schema_cache()
             
         return {"message": f"Table '{table_name}' and its chat history deleted successfully."}
     except HTTPException:
@@ -383,4 +393,181 @@ async def manual_run_sql(request: RunSqlRequest, db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to execute manual SQL: {str(e)}")
+
+@router.post("/chat/stream")
+async def chat_query_stream(request: ChatRequest, db: Session = Depends(get_db)):
+    """
+    Streaming version of the chat endpoint using Server-Sent Events (SSE).
+    SQL generation + execution happen first, then the explanation is streamed.
+    """
+    import re as _re
+    
+    try:
+        # Load conversation history
+        history = []
+        if request.session_id:
+            db_messages = db.query(ChatMessage).filter(
+                ChatMessage.session_id == request.session_id
+            ).order_by(ChatMessage.created_at.asc()).all()
+            for m in db_messages:
+                history.append({
+                    "role": m.role,
+                    "content": m.content,
+                    "sql_query": m.sql_query
+                })
+
+        # Create or load session
+        if request.session_id:
+            session = db.query(ChatSession).filter(ChatSession.id == request.session_id).first()
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found")
+        else:
+            title = request.question[:30] + "..." if len(request.question) > 30 else request.question
+            session = ChatSession(table_name=request.table_name, title=title)
+            db.add(session)
+            db.commit()
+            db.refresh(session)
+            request.session_id = session.id
+
+        # Save user message
+        user_msg = ChatMessage(
+            session_id=request.session_id,
+            role="user",
+            content=request.question
+        )
+        db.add(user_msg)
+        db.commit()
+
+        # --- Phase 1: Generate + Execute SQL (non-streamed) ---
+        schema = get_database_schema(table_name=request.table_name)
+        if not schema:
+            raise HTTPException(status_code=400, detail="No database tables found.")
+
+        raw_response = generate_sql(
+            request.question, schema,
+            active_table=request.table_name,
+            mode=request.mode,
+            history=history
+        )
+        cleaned_content = clean_sql_query(raw_response)
+
+        is_multi_query = False
+        parsed_queries = []
+        
+        if cleaned_content.strip().startswith("["):
+            try:
+                parsed_queries = json.loads(cleaned_content)
+                if isinstance(parsed_queries, list) and len(parsed_queries) > 0 and all(isinstance(q, dict) and "sql" in q for q in parsed_queries):
+                    is_multi_query = True
+            except Exception:
+                pass
+
+        final_sql = None
+        results = []
+        multi_queries_payload = []
+
+        if is_multi_query:
+            final_sql = "Multi-Query Dashboard"
+            for item in parsed_queries:
+                sql_sub = item["sql"]
+                sql_upper = sql_sub.upper()
+                if request.mode == "analysis":
+                    for forbidden in ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE"]:
+                        if _re.search(rf"\b{forbidden}\b", sql_upper):
+                            raise HTTPException(status_code=400, detail=f"Security check failed: forbidden keyword '{forbidden}'")
+                
+                # Execute each sub-query with self-correction
+                sub_sql, sub_results = _execute_with_retry(sql_sub, request.question, schema, request.table_name, request.mode, history)
+                multi_queries_payload.append({
+                    "title": item.get("title", "Metric Report"),
+                    "sql": sub_sql,
+                    "chart_type": item.get("chart_type", "bar"),
+                    "results": sub_results
+                })
+            results = multi_queries_payload
+        else:
+            final_sql = cleaned_content
+            # Safety check
+            sql_upper = final_sql.upper()
+            if request.mode == "analysis":
+                for forbidden in ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE"]:
+                    if _re.search(rf"\b{forbidden}\b", sql_upper):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Security check failed: forbidden keyword '{forbidden}'"
+                        )
+
+            # Execute with self-correcting retry
+            final_sql, results = _execute_with_retry(
+                final_sql, request.question, schema,
+                request.table_name, request.mode, history
+            )
+
+        # Generate follow-up suggestions
+        suggestions = generate_followup_suggestions(
+            request.question, results if not is_multi_query else [], table_name=request.table_name
+        )
+
+        # --- Phase 2: Stream explanation via SSE ---
+        def event_stream():
+            full_explanation = ""
+            
+            # First event: metadata (SQL, results, session_id)
+            metadata = {
+                "type": "metadata",
+                "sql": final_sql,
+                "results": results[:100] if not is_multi_query else None,
+                "queries": results if is_multi_query else None,
+                "is_multi_query": is_multi_query,
+                "session_id": request.session_id,
+                "suggestions": suggestions,
+                "mode": request.mode
+            }
+            yield f"data: {json.dumps(metadata)}\n\n"
+            
+            # Stream explanation chunks
+            try:
+                for chunk in generate_explanation_stream(
+                    request.question, final_sql, results, history=history, mode=request.mode
+                ):
+                    full_explanation += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+            except Exception as e:
+                full_explanation = f"Error generating explanation: {str(e)}"
+                yield f"data: {json.dumps({'type': 'chunk', 'text': full_explanation})}\n\n"
+            
+            # Final event: done
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            
+            # Save AI message to DB (after streaming completes)
+            try:
+                from app.database.connection import SessionLocal
+                save_db = SessionLocal()
+                ai_msg = ChatMessage(
+                    session_id=request.session_id,
+                    role="assistant",
+                    content=full_explanation,
+                    sql_query=final_sql,
+                    results_json=json.dumps(results) if results else None,
+                    explanation=full_explanation
+                )
+                save_db.add(ai_msg)
+                save_db.commit()
+                save_db.close()
+            except Exception:
+                pass
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
 

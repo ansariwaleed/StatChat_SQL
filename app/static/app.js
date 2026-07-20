@@ -35,6 +35,7 @@ document.body.appendChild(toastContainer);
 const newChatBtn = document.getElementById('new-chat-btn');
 const chatSessionsList = document.getElementById('chat-sessions-list');
 const chatModeSelect = document.getElementById('chat-mode-select');
+const startInterviewBtn = document.getElementById('start-interview-btn');
 
 // Tab Navigation Elements
 const tabBtnDashboard = document.getElementById('header-nav-dashboard');
@@ -806,8 +807,28 @@ async function deleteChatSession(sessionId, element) {
     }
 }
 
-// Chat Handler
+// Chat Handler — uses SSE streaming for real-time AI explanations
 function setupChatHandler() {
+    if (chatModeSelect) {
+        chatModeSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'consultant') {
+                if (startInterviewBtn) startInterviewBtn.style.display = 'block';
+                chatInput.placeholder = "Answer the consultant's question...";
+            } else {
+                if (startInterviewBtn) startInterviewBtn.style.display = 'none';
+                chatInput.placeholder = "Ask a question about your data...";
+            }
+        });
+    }
+
+    if (startInterviewBtn) {
+        startInterviewBtn.addEventListener('click', () => {
+            // Trigger the initial consultant analysis
+            chatInput.value = "Analyze the dataset for anomalies or extreme trends. Do not just summarize. Pick the single most surprising or impactful finding, present it to me, and ask me a direct question about WHY this might be happening from a business perspective.";
+            chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        });
+    }
+
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const question = chatInput.value.trim();
@@ -815,7 +836,7 @@ function setupChatHandler() {
 
         appendMessage('user', question);
         chatInput.value = '';
-        const typingMsgId = appendTypingIndicator();
+        const skeletonId = appendSkeletonLoader();
         chatInput.disabled = true;
         sendBtn.disabled = true;
 
@@ -827,33 +848,104 @@ function setupChatHandler() {
             };
             if (activeSessionId) payload.session_id = activeSessionId;
             
-            const response = await fetch("/chat", {
+            const response = await fetch("/chat/stream", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
 
-            removeTypingIndicator(typingMsgId);
-
             if (!response.ok) {
+                removeSkeletonLoader(skeletonId);
                 const err = await response.json();
                 throw new Error(err.detail || "Query failed");
             }
 
-            const data = await response.json();
-            
-            if (data.session_id && activeSessionId !== data.session_id) {
-                activeSessionId = data.session_id;
-                loadChatSessionsQuietly();
-            }
-            
-            if (data.error) {
-                appendMessage('assistant', `<strong>Error:</strong> ${data.error}`);
-            } else {
-                appendChatResult(data, true);
+            // Process SSE stream
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let metadata = null;
+            let fullExplanation = '';
+            let streamMsgEl = null;
+            let streamBubbleEl = null;
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // keep incomplete line in buffer
+
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const jsonStr = line.slice(6);
+                    
+                    let event;
+                    try { event = JSON.parse(jsonStr); } catch { continue; }
+
+                    if (event.type === 'metadata') {
+                        metadata = event;
+                        // Remove skeleton and create the streaming message container
+                        removeSkeletonLoader(skeletonId);
+
+                        if (metadata.session_id && activeSessionId !== metadata.session_id) {
+                            activeSessionId = metadata.session_id;
+                            loadChatSessionsQuietly();
+                        }
+
+                        // Create the AI message container for streaming
+                        streamMsgEl = document.createElement('div');
+                        streamMsgEl.className = 'message assistant-message';
+                        const avatar = document.createElement('div');
+                        avatar.className = 'msg-avatar';
+                        avatar.textContent = 'AI';
+                        streamMsgEl.appendChild(avatar);
+                        streamBubbleEl = document.createElement('div');
+                        streamBubbleEl.className = 'msg-bubble';
+                        streamMsgEl.appendChild(streamBubbleEl);
+
+                        // Add streaming explanation container
+                        const expEl = document.createElement('div');
+                        expEl.className = 'explanation streaming-explanation';
+                        expEl.id = 'stream-explanation-' + Date.now();
+                        streamBubbleEl.appendChild(expEl);
+
+                        chatMessages.appendChild(streamMsgEl);
+                        scrollToBottom();
+                    }
+
+                    if (event.type === 'chunk' && streamBubbleEl) {
+                        fullExplanation += event.text;
+                        const expEl = streamBubbleEl.querySelector('.streaming-explanation');
+                        if (expEl) {
+                            expEl.innerHTML = marked.parse(fullExplanation);
+                        }
+                        scrollToBottom();
+                    }
+
+                    if (event.type === 'done' && metadata && streamBubbleEl) {
+                        // Render the full result (SQL, chart, actions) now that streaming is done
+                        const fullData = {
+                            question: question,
+                            sql: metadata.sql,
+                            results: metadata.results,
+                            is_multi_query: metadata.is_multi_query,
+                            queries: metadata.queries,
+                            explanation: fullExplanation,
+                            session_id: metadata.session_id,
+                            suggestions: metadata.suggestions,
+                            mode: metadata.mode
+                        };
+                        
+                        // Remove the streaming message and replace with full result
+                        streamMsgEl.remove();
+                        appendChatResult(fullData, true);
+                    }
+                }
             }
         } catch (error) {
-            removeTypingIndicator(typingMsgId);
+            removeSkeletonLoader(skeletonId);
             appendMessage('assistant', `<strong>Error:</strong> ${error.message}`);
         } finally {
             chatInput.disabled = false;
@@ -886,15 +978,25 @@ function appendSystemMessage(htmlText) {
     scrollToBottom();
 }
 
-function appendTypingIndicator() {
-    const id = 'typing-' + Date.now();
+// Premium skeleton loading state
+function appendSkeletonLoader() {
+    const id = 'skeleton-' + Date.now();
     const message = document.createElement('div');
     message.className = 'message assistant-message';
     message.id = id;
     message.innerHTML = `
         <div class="msg-avatar">AI</div>
-        <div class="msg-bubble">
-            <div class="typing-indicator"><span></span><span></span><span></span></div>
+        <div class="msg-bubble" style="width: 100%;">
+            <div class="skeleton-card">
+                <div class="skeleton-line skeleton" style="width: 90%; height: 14px;"></div>
+                <div class="skeleton-line skeleton" style="width: 75%; height: 14px;"></div>
+                <div class="skeleton-line skeleton" style="width: 60%; height: 14px;"></div>
+                <div class="skeleton-divider"></div>
+                <div class="skeleton-line skeleton" style="width: 40%; height: 10px;"></div>
+                <div class="skeleton-block skeleton" style="height: 60px;"></div>
+                <div class="skeleton-divider"></div>
+                <div class="skeleton-block skeleton" style="height: 120px;"></div>
+            </div>
         </div>
     `;
     chatMessages.appendChild(message);
@@ -902,9 +1004,17 @@ function appendTypingIndicator() {
     return id;
 }
 
-function removeTypingIndicator(id) {
+function removeSkeletonLoader(id) {
     const el = document.getElementById(id);
     if (el) el.remove();
+}
+
+// Keep old functions for backward compatibility (history loading)
+function appendTypingIndicator() {
+    return appendSkeletonLoader();
+}
+function removeTypingIndicator(id) {
+    removeSkeletonLoader(id);
 }
 
 // Chart Detection for Chat
@@ -919,10 +1029,54 @@ function detectChartType(question) {
     return 'auto';
 }
 
+// Downsampling utilities for large datasets
+function downsampleForBarPie(results, labelCol, maxItems = 20) {
+    if (results.length <= maxItems) return results;
+    // Keep top N by first numeric column, aggregate rest as "Other"
+    const topResults = results.slice(0, maxItems - 1);
+    const rest = results.slice(maxItems - 1);
+    const otherRow = { [labelCol]: 'Other' };
+    const numKeys = Object.keys(results[0]).filter(k => k !== labelCol);
+    numKeys.forEach(k => {
+        otherRow[k] = rest.reduce((sum, r) => sum + (parseFloat(r[k]) || 0), 0);
+    });
+    return [...topResults, otherRow];
+}
+
+function downsampleLTTB(data, targetCount = 500) {
+    // Largest Triangle Three Buckets algorithm for line/scatter downsampling
+    if (data.length <= targetCount) return data;
+    const sampled = [data[0]];
+    const bucketSize = (data.length - 2) / (targetCount - 2);
+    let a = 0;
+    for (let i = 1; i < targetCount - 1; i++) {
+        const avgStart = Math.floor((i) * bucketSize) + 1;
+        const avgEnd = Math.min(Math.floor((i + 1) * bucketSize) + 1, data.length);
+        let avgX = 0, avgY = 0;
+        for (let j = avgStart; j < avgEnd; j++) { avgX += j; avgY += (parseFloat(data[j]) || 0); }
+        avgX /= (avgEnd - avgStart);
+        avgY /= (avgEnd - avgStart);
+        const rangeStart = Math.floor((i - 1) * bucketSize) + 1;
+        const rangeEnd = Math.floor(i * bucketSize) + 1;
+        let maxArea = -1, maxIdx = rangeStart;
+        for (let j = rangeStart; j < rangeEnd; j++) {
+            const area = Math.abs((a - avgX) * ((parseFloat(data[j]) || 0) - (parseFloat(data[a]) || 0)) - (a - j) * (avgY - (parseFloat(data[a]) || 0))) * 0.5;
+            if (area > maxArea) { maxArea = area; maxIdx = j; }
+        }
+        sampled.push(data[maxIdx]);
+        a = maxIdx;
+    }
+    sampled.push(data[data.length - 1]);
+    return sampled;
+}
+
 function analyzeResultsForChart(results, chartType = 'auto') {
-    if (!results || results.length === 0 || results.length > 50) return null;
+    if (!results || results.length === 0) return null;
     const columns = Object.keys(results[0]);
     if (columns.length < 2) return null;
+
+    // Allow up to 500 rows for charts (was 50), with downsampling
+    if (results.length > 500 && chartType !== 'scatter') return null;
 
     const labelCols = [];
     const numericCols = [];
@@ -935,31 +1089,39 @@ function analyzeResultsForChart(results, chartType = 'auto') {
         else labelCols.push(col);
     });
 
-    // Special parsing structure for Scatter Plot
+    // Special parsing structure for Scatter Plot (with LTTB downsampling)
     if (chartType === 'scatter') {
         if (numericCols.length >= 2) {
+            let scatterData = results.map(r => ({
+                x: parseFloat(r[numericCols[0]]),
+                y: parseFloat(r[numericCols[1]])
+            }));
+            // Downsample scatter to 500 points max
+            if (scatterData.length > 500) {
+                scatterData = scatterData.slice(0, 500);
+            }
             return {
                 xCol: numericCols[0],
                 yCol: numericCols[1],
-                series: [{
-                    name: `${numericCols[1]} vs ${numericCols[0]}`,
-                    data: results.map(r => ({
-                        x: parseFloat(r[numericCols[0]]),
-                        y: parseFloat(r[numericCols[1]])
-                    }))
-                }]
+                series: [{ name: `${numericCols[1]} vs ${numericCols[0]}`, data: scatterData }]
             };
         }
+    }
+
+    // Downsample for bar/pie charts
+    let chartResults = results;
+    if (labelCols.length >= 1 && (chartType === 'bar' || chartType === 'pie' || chartType === 'auto')) {
+        chartResults = downsampleForBarPie(results, labelCols[0], chartType === 'pie' ? 8 : 25);
     }
 
     if (labelCols.length >= 1 && numericCols.length >= 1) {
         return {
             labelCol: labelCols[0],
             numericCols: numericCols,
-            labels: results.map(r => String(r[labelCols[0]] !== null ? r[labelCols[0]] : '—')),
+            labels: chartResults.map(r => String(r[labelCols[0]] !== null ? r[labelCols[0]] : '—')),
             series: numericCols.map(col => ({
                 name: col,
-                data: results.map(r => r[col] !== null && r[col] !== undefined ? parseFloat(r[col]) : 0)
+                data: chartResults.map(r => r[col] !== null && r[col] !== undefined ? parseFloat(r[col]) : 0)
             }))
         };
     }
@@ -968,10 +1130,10 @@ function analyzeResultsForChart(results, chartType = 'auto') {
         return {
             labelCol: numericCols[0],
             numericCols: numericCols.slice(1),
-            labels: results.map(r => String(r[numericCols[0]])),
+            labels: chartResults.map(r => String(r[numericCols[0]])),
             series: numericCols.slice(1).map(col => ({
                 name: col,
-                data: results.map(r => r[col] !== null && r[col] !== undefined ? parseFloat(r[col]) : 0)
+                data: chartResults.map(r => r[col] !== null && r[col] !== undefined ? parseFloat(r[col]) : 0)
             }))
         };
     }
@@ -1058,7 +1220,20 @@ function renderInlineChatChart(containerId, chartData, chartType, animate = true
                 categories: chartData.labels,
                 axisBorder: { show: false },
                 axisTicks: { show: false },
-                labels: { style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" } }
+                labels: { 
+                    style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" },
+                    formatter: val => {
+                        if (val === undefined || val === null) return val;
+                        if (typeof val === 'number') {
+                            if (val >= 1e9) return (val/1e9).toFixed(1) + 'B';
+                            if (val >= 1e6) return (val/1e6).toFixed(1) + 'M';
+                            if (val >= 1e3) return (val/1e3).toFixed(1) + 'K';
+                            return val.toFixed(val % 1 === 0 ? 0 : 2);
+                        }
+                        if (typeof val === 'string' && val.length > 25) return val.substring(0, 22) + '...';
+                        return val;
+                    }
+                }
             },
             yaxis: {
                 logarithmic: useLogScale,
@@ -1066,9 +1241,14 @@ function renderInlineChatChart(containerId, chartData, chartType, animate = true
                     style: { fontSize: '10px', fontFamily: "'JetBrains Mono', monospace" },
                     formatter: val => {
                         if (val === undefined || val === null) return val;
-                        if (val >= 1e6) return (val/1e6).toFixed(1) + 'M';
-                        if (val >= 1e3) return (val/1e3).toFixed(1) + 'K';
-                        return typeof val === 'number' ? val.toFixed(val % 1 === 0 ? 0 : 2) : val;
+                        if (typeof val === 'number') {
+                            if (val >= 1e9) return (val/1e9).toFixed(1) + 'B';
+                            if (val >= 1e6) return (val/1e6).toFixed(1) + 'M';
+                            if (val >= 1e3) return (val/1e3).toFixed(1) + 'K';
+                            return val.toFixed(val % 1 === 0 ? 0 : 2);
+                        }
+                        if (typeof val === 'string' && val.length > 25) return val.substring(0, 22) + '...';
+                        return val;
                     }
                 }
             },
@@ -1090,14 +1270,20 @@ function renderInlineChatChart(containerId, chartData, chartType, animate = true
 function appendChatResult(data, animateChart = true) {
     const message = document.createElement('div');
     message.className = 'message assistant-message';
+    if (data.mode === 'consultant') {
+        message.classList.add('consultant-message');
+    }
 
     const avatar = document.createElement('div');
     avatar.className = 'msg-avatar';
-    avatar.textContent = 'AI';
+    avatar.textContent = data.mode === 'consultant' ? 'CON' : 'AI';
     message.appendChild(avatar);
 
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble';
+    if (data.mode === 'consultant') {
+        bubble.classList.add('consultant-bubble');
+    }
 
     // 1. Explanation
     if (data.explanation) {
@@ -1275,19 +1461,120 @@ function appendChatResult(data, animateChart = true) {
                     </div>
                 `;
             } else {
-                // Render basic table for small results
-                let tableHtml = '<div class="table-wrapper"><table class="data-table"><thead><tr>';
+                // Interactive Data Grid with sort, filter, and pagination
+                const gridId = 'grid-' + Date.now();
                 const keys = Object.keys(data.results[0]);
-                keys.forEach(k => tableHtml += `<th>${k}</th>`);
-                tableHtml += '</tr></thead><tbody>';
-                
-                data.results.slice(0, 15).forEach(row => {
-                    tableHtml += '<tr>';
-                    keys.forEach(k => tableHtml += `<td>${row[k]}</td>`);
-                    tableHtml += '</tr>';
+                const allRows = data.results;
+                const PAGE_SIZE = 25;
+                let currentPage = 0;
+                let sortCol = null;
+                let sortAsc = true;
+                let filterTerm = '';
+
+                const gridContainer = document.createElement('div');
+                gridContainer.className = 'interactive-grid';
+                gridContainer.id = gridId;
+
+                // Filter input
+                const filterRow = document.createElement('div');
+                filterRow.className = 'grid-filter-row';
+                filterRow.innerHTML = `
+                    <input type="text" class="grid-filter-input" placeholder="Filter rows..." />
+                    <span class="grid-row-count">${allRows.length} rows</span>
+                `;
+                gridContainer.appendChild(filterRow);
+
+                const tableWrapper = document.createElement('div');
+                tableWrapper.className = 'table-wrapper';
+                gridContainer.appendChild(tableWrapper);
+
+                // Pagination controls
+                const paginationRow = document.createElement('div');
+                paginationRow.className = 'grid-pagination';
+                gridContainer.appendChild(paginationRow);
+
+                function getFilteredSorted() {
+                    let rows = allRows;
+                    if (filterTerm) {
+                        const ft = filterTerm.toLowerCase();
+                        rows = rows.filter(r => keys.some(k => String(r[k] ?? '').toLowerCase().includes(ft)));
+                    }
+                    if (sortCol !== null) {
+                        rows = [...rows].sort((a, b) => {
+                            const va = a[sortCol], vb = b[sortCol];
+                            const na = parseFloat(va), nb = parseFloat(vb);
+                            if (!isNaN(na) && !isNaN(nb)) return sortAsc ? na - nb : nb - na;
+                            return sortAsc ? String(va ?? '').localeCompare(String(vb ?? '')) : String(vb ?? '').localeCompare(String(va ?? ''));
+                        });
+                    }
+                    return rows;
+                }
+
+                function renderGrid() {
+                    const rows = getFilteredSorted();
+                    const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+                    if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
+                    const pageRows = rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+                    let html = '<table class="data-table"><thead><tr>';
+                    keys.forEach(k => {
+                        const arrow = sortCol === k ? (sortAsc ? ' ▲' : ' ▼') : '';
+                        html += `<th class="sortable-th" data-col="${k}">${k}${arrow}</th>`;
+                    });
+                    html += '</tr></thead><tbody>';
+                    pageRows.forEach(row => {
+                        html += '<tr>';
+                        keys.forEach(k => html += `<td>${row[k] !== null && row[k] !== undefined ? row[k] : '—'}</td>`);
+                        html += '</tr>';
+                    });
+                    if (pageRows.length === 0) html += '<tr><td colspan="' + keys.length + '" style="text-align:center;color:var(--text-muted);">No matching rows</td></tr>';
+                    html += '</tbody></table>';
+                    tableWrapper.innerHTML = html;
+
+                    // Sort click handlers
+                    tableWrapper.querySelectorAll('.sortable-th').forEach(th => {
+                        th.style.cursor = 'pointer';
+                        th.addEventListener('click', () => {
+                            const col = th.dataset.col;
+                            if (sortCol === col) sortAsc = !sortAsc;
+                            else { sortCol = col; sortAsc = true; }
+                            renderGrid();
+                        });
+                    });
+
+                    // Row count
+                    const countEl = gridContainer.querySelector('.grid-row-count');
+                    if (countEl) countEl.textContent = `${rows.length} of ${allRows.length} rows`;
+
+                    // Pagination
+                    if (totalPages > 1) {
+                        paginationRow.innerHTML = `
+                            <button class="grid-page-btn" ${currentPage === 0 ? 'disabled' : ''} data-action="prev">← Prev</button>
+                            <span class="grid-page-info">Page ${currentPage + 1} / ${totalPages}</span>
+                            <button class="grid-page-btn" ${currentPage >= totalPages - 1 ? 'disabled' : ''} data-action="next">Next →</button>
+                        `;
+                        paginationRow.querySelectorAll('.grid-page-btn').forEach(btn => {
+                            btn.addEventListener('click', () => {
+                                if (btn.dataset.action === 'prev' && currentPage > 0) currentPage--;
+                                if (btn.dataset.action === 'next' && currentPage < totalPages - 1) currentPage++;
+                                renderGrid();
+                            });
+                        });
+                    } else {
+                        paginationRow.innerHTML = '';
+                    }
+                }
+
+                // Filter input handler
+                const filterInput = filterRow.querySelector('.grid-filter-input');
+                filterInput.addEventListener('input', (e) => {
+                    filterTerm = e.target.value;
+                    currentPage = 0;
+                    renderGrid();
                 });
-                tableHtml += '</tbody></table></div>';
-                vizContainer.innerHTML = tableHtml;
+
+                renderGrid();
+                vizContainer.appendChild(gridContainer);
             }
             
             bubble.appendChild(vizContainer);
@@ -1362,12 +1649,57 @@ function appendChatResult(data, animateChart = true) {
             };
             
             actionsContainer.appendChild(pinBtn);
+
+            // Export PDF button
+            const pdfBtn = document.createElement('button');
+            pdfBtn.className = 'action-btn';
+            pdfBtn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Export PDF';
+            pdfBtn.style = "background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 4px 8px; font-size: 11px; cursor: pointer; border-radius: 4px;";
+            pdfBtn.onclick = () => {
+                if (typeof html2pdf === 'undefined') {
+                    showToast('PDF library not loaded.', 'error');
+                    return;
+                }
+                const exportEl = bubble.cloneNode(true);
+                exportEl.classList.add('pdf-export-container');
+                document.body.appendChild(exportEl);
+                html2pdf().set({
+                    margin: 10,
+                    filename: `statchat_report_${Date.now()}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, backgroundColor: '#09090b' },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                }).from(exportEl).save().then(() => {
+                    exportEl.remove();
+                    showToast('PDF exported successfully!', 'success');
+                });
+            };
+            actionsContainer.appendChild(pdfBtn);
+
             bubble.appendChild(actionsContainer);
         }
 
         if (shouldShowChart && chartData) {
             renderInlineChatChart(chartId, chartData, userRequestedChart === 'auto' ? 'bar' : userRequestedChart, animateChart);
         }
+    }
+
+    // Follow-up Suggestion Chips
+    if (data.suggestions && data.suggestions.length > 0) {
+        const suggestionsEl = document.createElement('div');
+        suggestionsEl.className = 'followup-suggestions';
+        suggestionsEl.innerHTML = '<span class="followup-label"><i class="fa-solid fa-lightbulb"></i> Follow-up</span>';
+        data.suggestions.forEach(s => {
+            const chip = document.createElement('button');
+            chip.className = 'followup-chip';
+            chip.textContent = s;
+            chip.addEventListener('click', () => {
+                chatInput.value = s;
+                chatForm.dispatchEvent(new Event('submit'));
+            });
+            suggestionsEl.appendChild(chip);
+        });
+        bubble.appendChild(suggestionsEl);
     }
     
     message.appendChild(bubble);

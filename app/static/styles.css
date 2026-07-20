@@ -1604,3 +1604,223 @@ body {
     padding: 16px;
     width: 100%;
 }
+
+/* ==================== SKELETON LOADING ==================== */
+.skeleton {
+    background: linear-gradient(90deg, var(--surface) 25%, var(--elevated) 50%, var(--surface) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite ease-in-out;
+    border-radius: 4px;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.skeleton-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.skeleton-line {
+    border-radius: 4px;
+}
+
+.skeleton-block {
+    border-radius: 6px;
+    width: 100%;
+}
+
+.skeleton-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+}
+
+/* ==================== STREAMING EXPLANATION ==================== */
+.streaming-explanation {
+    border-left-color: var(--green);
+}
+
+.streaming-explanation::after {
+    content: '▌';
+    animation: cursorBlink 0.8s step-end infinite;
+    color: var(--text-muted);
+}
+
+@keyframes cursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* ==================== INTERACTIVE DATA GRID ==================== */
+.interactive-grid {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 12px 0;
+}
+
+.grid-filter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--elevated);
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+}
+
+.grid-filter-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 10px;
+    outline: none;
+    transition: border-color var(--ease);
+}
+
+.grid-filter-input:focus {
+    border-color: var(--white);
+}
+
+.grid-filter-input::placeholder {
+    color: var(--text-muted);
+}
+
+.grid-row-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.sortable-th {
+    cursor: pointer;
+    user-select: none;
+    transition: color var(--ease);
+}
+
+.sortable-th:hover {
+    color: var(--white);
+}
+
+.grid-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 8px 12px;
+    background: var(--elevated);
+    border-top: 1px solid var(--border);
+}
+
+.grid-page-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: all var(--ease);
+}
+
+.grid-page-btn:hover:not(:disabled) {
+    background: var(--white);
+    color: var(--black);
+    border-color: var(--white);
+}
+
+.grid-page-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.grid-page-info {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+/* ==================== FOLLOW-UP SUGGESTIONS ==================== */
+.followup-suggestions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.followup-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.followup-label i {
+    color: #f59e0b;
+    font-size: 11px;
+}
+
+.followup-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 12px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--ease);
+    white-space: nowrap;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.followup-chip:hover {
+    background: var(--white);
+    color: var(--black);
+    border-color: var(--white);
+}
+
+/* ==================== PDF EXPORT ==================== */
+.pdf-export-container {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    width: 800px;
+    background: #09090b;
+    color: #f4f4f5;
+    padding: 24px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+    .pdf-export-container {
+        background: white;
+        color: black;
+    }
+}/ *   C o n s u l t a n t   M o d e   * /  
+ . c o n s u l t a n t - m e s s a g e   . m s g - a v a t a r   {   b a c k g r o u n d :   v a r ( - - b l u e ) ;   c o l o r :   v a r ( - - w h i t e ) ;   }  
+ . c o n s u l t a n t - b u b b l e   {   b o r d e r :   1 p x   s o l i d   v a r ( - - b l u e ) ;   b o r d e r - l e f t :   4 p x   s o l i d   v a r ( - - b l u e ) ;   b o x - s h a d o w :   0   0   1 0 p x   r g b a ( 5 9 ,   1 3 0 ,   2 4 6 ,   0 . 2 ) ;   }  
+ 

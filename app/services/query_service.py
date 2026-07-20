@@ -1,10 +1,14 @@
 import os
 import re
 import json
+import logging
+from functools import lru_cache
 from google import genai
 from google.genai import types
 from sqlalchemy import text, inspect
 from app.database.connection import engine
+
+logger = logging.getLogger(__name__)
 
 def get_gemini_client():
     gemini_key = os.getenv("GEMINI_API_KEY")
@@ -24,12 +28,18 @@ def get_gemini_client():
         
     raise ValueError("Neither GEMINI_API_KEY nor GOOGLE_API_KEY is set in environment or .env file.")
 
-def get_database_schema(table_name: str = None) -> str:
-    """
-    Retrieves the column schemas for tables in the database
-    and formats them as a readable string for the LLM.
-    If table_name is provided, only that table's schema is returned.
-    """
+# Schema cache version counter — incremented on upload/delete to invalidate cache
+_schema_cache_version = 0
+
+def clear_schema_cache():
+    """Call this after CSV uploads or table deletions to invalidate the schema cache."""
+    global _schema_cache_version
+    _schema_cache_version += 1
+    _get_database_schema_cached.cache_clear()
+
+@lru_cache(maxsize=32)
+def _get_database_schema_cached(table_name: str, cache_version: int) -> str:
+    """Internal cached implementation. cache_version param ensures invalidation."""
     inspector = inspect(engine)
     schema_str = ""
     all_tables = inspector.get_table_names()
@@ -45,6 +55,15 @@ def get_database_schema(table_name: str = None) -> str:
         schema_str += "\n"
         
     return schema_str
+
+def get_database_schema(table_name: str = None) -> str:
+    """
+    Retrieves the column schemas for tables in the database
+    and formats them as a readable string for the LLM.
+    If table_name is provided, only that table's schema is returned.
+    Uses LRU cache for performance — call clear_schema_cache() after mutations.
+    """
+    return _get_database_schema_cached(table_name or "__all__", _schema_cache_version)
 
 def clean_sql_query(raw_response: str) -> str:
     """
@@ -94,6 +113,19 @@ def generate_sql(question: str, schema: str, active_table: str = None, mode: str
             "2. Do not explain the code. Do not write any conversational text. Only output the SQL code block.\n"
             "3. Pay close attention to table names and column names. Match them exactly as they are defined in the schema.\n"
             "4. Output the query inside a ```sql ... ``` markdown code block.\n"
+            f"{table_instruction}"
+        )
+    elif mode == "consultant":
+        system_prompt = (
+            f"You are an expert data analyst and database administrator. "
+            f"Your task is to generate a valid, optimized, read-only {db_type} SELECT query based on the database schema, previous conversation history, and user question.\n\n"
+            "Strict Guidelines:\n"
+            "1. ONLY generate SELECT queries. Never generate data modifying queries.\n"
+            "2. Do not explain the code. Do not write any conversational text. Only output the code block.\n"
+            "3. Pay close attention to table names and column names. Match them exactly as they are defined in the schema.\n"
+            "4. If standard aggregations (SUM, AVG, COUNT, MAX, MIN) or sorting/grouping are needed, include them.\n"
+            "5. The user is in 'Consultant Mode'. If the user's prompt is a broad request for analysis, generate a query designed to find the MOST EXTREME anomaly, biggest drop/spike, or most concentrated metric in the data (e.g. ORDER BY some metric DESC LIMIT 10). We want to find something surprising.\n"
+            "6. Output the query inside a ```sql ... ``` markdown code block.\n"
             f"{table_instruction}"
         )
     else:
@@ -163,20 +195,24 @@ def format_results_for_llm(results: list) -> str:
         results = results[:15]
     return str(results)
 
-def generate_explanation(question: str, sql_query: str, results: list, history: list = None) -> str:
-    """
-    Generates a human-readable explanation of the query results.
-    """
-    client = get_gemini_client()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-    
-    system_prompt = (
-        "You are a helpful business intelligence and data analyst assistant. "
-        "Given a user's analytical question, the SQL query (or queries) executed, and the resulting records, "
-        "provide a concise, easy-to-understand explanation of the findings.\n"
-        "Summarize the key takeaways and insights. Format numbers nicely (e.g., currency, percentages) and present lists/tables where appropriate.\n"
-        "Do not explain the SQL query itself; focus purely on the data and the answer to the user's question."
-    )
+def _build_explanation_prompt(question: str, sql_query: str, results: list, history: list = None, mode: str = "analysis"):
+    """Builds the system prompt and user prompt for explanation generation."""
+    if mode == "consultant":
+        system_prompt = (
+            "You are an aggressive, sharp Business Consultant and Data Analyst. "
+            "Given the user's query, the SQL executed, and the resulting records, your goal is to INTERVIEW the user. "
+            "Do NOT just summarize the data. Point out the single most alarming, surprising, or extreme finding in the data. "
+            "Then, end your response with a direct, probing question to the user asking WHY this might be happening from a business perspective. "
+            "Format numbers nicely and be concise."
+        )
+    else:
+        system_prompt = (
+            "You are a helpful business intelligence and data analyst assistant. "
+            "Given a user's analytical question, the SQL query (or queries) executed, and the resulting records, "
+            "provide a concise, easy-to-understand explanation of the findings.\n"
+            "Summarize the key takeaways and insights. Format numbers nicely (e.g., currency, percentages) and present lists/tables where appropriate.\n"
+            "Do not explain the SQL query itself; focus purely on the data and the answer to the user's question."
+        )
     
     history_context = ""
     if history:
@@ -204,6 +240,15 @@ def generate_explanation(question: str, sql_query: str, results: list, history: 
         f"Query Results:\n{formatted_results}\n\n"
         f"Explanation:"
     )
+    return system_prompt, user_prompt
+
+def generate_explanation(question: str, sql_query: str, results: list, history: list = None, mode: str = "analysis") -> str:
+    """
+    Generates a human-readable explanation of the query results.
+    """
+    client = get_gemini_client()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    system_prompt, user_prompt = _build_explanation_prompt(question, sql_query, results, history, mode)
     
     response = client.models.generate_content(
         model=model_name,
@@ -216,10 +261,107 @@ def generate_explanation(question: str, sql_query: str, results: list, history: 
     
     return response.text.strip()
 
+def generate_explanation_stream(question: str, sql_query: str, results: list, history: list = None, mode: str = "analysis"):
+    """
+    Streams a human-readable explanation of the query results, yielding text chunks.
+    """
+    client = get_gemini_client()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    system_prompt, user_prompt = _build_explanation_prompt(question, sql_query, results, history, mode)
+    
+    response = client.models.generate_content_stream(
+        model=model_name,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.3
+        )
+    )
+    
+    for chunk in response:
+        if chunk.text:
+            yield chunk.text
+
+def generate_followup_suggestions(question: str, results: list, table_name: str = None) -> list:
+    """
+    Generates 3 predictive follow-up question suggestions based on the current Q&A context.
+    """
+    try:
+        client = get_gemini_client()
+        model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+        
+        formatted_results = format_results_for_llm(results) if results else "No results."
+        table_ctx = f" about the table '{table_name}'" if table_name else ""
+        
+        system_prompt = (
+            "You are a data analytics assistant. Given a user's question and query results, "
+            "suggest exactly 3 short, natural follow-up questions they might want to ask next" + table_ctx + ".\n"
+            "Return ONLY a JSON array of 3 strings. No explanation, no markdown. Example:\n"
+            '["What is the breakdown by region?", "Show the trend over time", "Which category has the highest value?"]'
+        )
+        
+        user_prompt = f"Question: {question}\nResults: {formatted_results}"
+        
+        response = client.models.generate_content(
+            model=model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.7
+            )
+        )
+        
+        raw = response.text.strip()
+        # Try to parse JSON array from the response
+        json_match = re.search(r'\[.*?\]', raw, re.DOTALL)
+        if json_match:
+            suggestions = json.loads(json_match.group(0))
+            if isinstance(suggestions, list):
+                return [str(s) for s in suggestions[:3]]
+        return []
+    except Exception as e:
+        logger.warning(f"Failed to generate follow-up suggestions: {e}")
+        return []
+
+MAX_SQL_RETRIES = 2
+
+def _execute_with_retry(sql: str, question: str, schema: str, active_table: str, mode: str, history: list) -> tuple:
+    """
+    Executes SQL with self-correcting retry logic.
+    If execution fails, feeds the error back to Gemini for correction.
+    Returns (sql, results) tuple.
+    """
+    last_error = None
+    current_sql = sql
+    
+    for attempt in range(1 + MAX_SQL_RETRIES):
+        try:
+            results = execute_query(current_sql)
+            if attempt > 0:
+                logger.info(f"SQL self-correction succeeded on attempt {attempt + 1}")
+            return current_sql, results
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_SQL_RETRIES:
+                logger.warning(f"SQL execution failed (attempt {attempt + 1}): {e}. Retrying with correction...")
+                correction_context = (
+                    f"The previous SQL query failed with this error:\n{str(e)}\n\n"
+                    f"Failed SQL:\n{current_sql}\n\n"
+                    f"Please generate a corrected version of this query."
+                )
+                corrected_history = (history or []) + [{"role": "user", "content": correction_context}]
+                raw_response = generate_sql(question, schema, active_table=active_table, mode=mode, history=corrected_history)
+                current_sql = clean_sql_query(raw_response)
+            else:
+                raise last_error
+    
+    raise last_error  # Should not reach here
+
 def process_analytical_question(question: str, active_table: str = None, mode: str = "analysis", history: list = None) -> dict:
     """
     Orchestrates the workflow of reading the schema, generating SQL, executing it,
     and explaining the result. Supports both single-query and multi-query dashboard flows.
+    Includes self-correcting SQL retry logic.
     """
     schema = get_database_schema(table_name=active_table)
     if not schema:
@@ -263,21 +405,25 @@ def process_analytical_question(question: str, active_table: str = None, mode: s
                     if re.search(rf"\b{forbidden}\b", sql_upper):
                         raise ValueError(f"Security check failed: generated SQL contains forbidden keyword '{forbidden}' in analysis mode.")
                 
-                sub_results = execute_query(sql_sub)
+                # Use retry logic for each sub-query
+                final_sql, sub_results = _execute_with_retry(sql_sub, question, schema, active_table, mode, history)
                 results_list.append({
                     "title": item.get("title", "Metric Report"),
-                    "sql": sql_sub,
+                    "sql": final_sql,
                     "chart_type": item.get("chart_type", "bar"),
                     "results": sub_results
                 })
                 
-            explanation = generate_explanation(question, "Multi-Query Dashboard", results_list, history=history)
+            explanation = generate_explanation(question, "Multi-Query Dashboard", results_list, history=history, mode=mode)
+            suggestions = generate_followup_suggestions(question, [], table_name=active_table)
             
             return {
                 "question": question,
                 "is_multi_query": True,
                 "queries": results_list,
-                "explanation": explanation
+                "explanation": explanation,
+                "suggestions": suggestions,
+                "mode": mode
             }
             
         else:
@@ -291,15 +437,19 @@ def process_analytical_question(question: str, active_table: str = None, mode: s
             else:
                 if re.search(rf"\bDROP\b", sql_upper):
                     raise ValueError("Security check failed: DROP queries are never allowed.")
-                    
-            results = execute_query(sql)
-            explanation = generate_explanation(question, sql, results, history=history)
+            
+            # Use self-correcting retry logic
+            sql, results = _execute_with_retry(sql, question, schema, active_table, mode, history)
+            explanation = generate_explanation(question, sql, results, history=history, mode=mode)
+            suggestions = generate_followup_suggestions(question, results, table_name=active_table)
             
             return {
                 "question": question,
                 "sql": sql,
                 "results": results,
-                "explanation": explanation
+                "explanation": explanation,
+                "suggestions": suggestions,
+                "mode": mode
             }
             
     except Exception as e:

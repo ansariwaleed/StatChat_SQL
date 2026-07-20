@@ -8,11 +8,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="/static/app.js?v=27" defer></script>
+    <script src="/static/app.js?v=30" defer></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <link rel="stylesheet" href="/static/styles.css?v=15">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link rel="stylesheet" href="/static/styles.css?v=18">
 </head>
 <body>
     <!-- ==================== LANDING PAGE ==================== -->
@@ -92,6 +93,34 @@
                         <span class="arch-label">Compiler</span>
                         <span class="arch-value">Report Agent</span>
                         <span class="arch-desc">Charts & Insights</span>
+                    </div>
+                </div>
+            </section>
+            <hr class="l-divider">
+
+            <!-- FEATURES SECTION -->
+            <section class="l-section reveal-on-scroll">
+                <h2>FEATURES & HOW TO USE</h2>
+                <div style="display: grid; grid-template-columns: 1fr; gap: 24px; margin-top: 24px;">
+                    <div style="background: var(--surface); padding: 20px; border: 1px solid var(--border); border-radius: 8px;">
+                        <h3 style="color: var(--blue); margin-bottom: 8px; font-family: var(--mono); font-size: 13px;">1. Multi-Query Dashboard & Auto-EDA</h3>
+                        <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.6;"><strong>How to use:</strong> Ask a broad question like "give me an overview" or "generate a sales report". The AI will automatically generate multiple queries, execute them in parallel, and return a grid of interactive charts.</p>
+                    </div>
+                    <div style="background: var(--surface); padding: 20px; border: 1px solid var(--border); border-radius: 8px;">
+                        <h3 style="color: var(--green); margin-bottom: 8px; font-family: var(--mono); font-size: 13px;">2. Agentic Self-Correcting SQL</h3>
+                        <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.6;"><strong>How to use:</strong> Just ask a question! If the AI generates invalid SQL, the backend catches the exact database error and automatically feeds it back to the AI in the background to rewrite the query until it works.</p>
+                    </div>
+                    <div style="background: var(--surface); padding: 20px; border: 1px solid var(--border); border-radius: 8px;">
+                        <h3 style="color: var(--purple); margin-bottom: 8px; font-family: var(--mono); font-size: 13px;">3. Consultant Mode (Reverse Q&A)</h3>
+                        <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.6;"><strong>How to use:</strong> Select "Consultant Mode" from the dropdown above the chat bar, then click "Start Interview". The AI will proactively hunt your data for the biggest anomalies, present them to you, and interview you about the business reasons behind them.</p>
+                    </div>
+                    <div style="background: var(--surface); padding: 20px; border: 1px solid var(--border); border-radius: 8px;">
+                        <h3 style="color: var(--yellow); margin-bottom: 8px; font-family: var(--mono); font-size: 13px;">4. Data Cleaning Mode</h3>
+                        <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.6;"><strong>How to use:</strong> Change the mode dropdown to "Data Cleaning". You can now instruct the AI to execute UPDATE, DELETE, or ALTER queries (e.g., "Standardize all country names to USA", "Remove rows where age is null").</p>
+                    </div>
+                    <div style="background: var(--surface); padding: 20px; border: 1px solid var(--border); border-radius: 8px;">
+                        <h3 style="color: var(--red); margin-bottom: 8px; font-family: var(--mono); font-size: 13px;">5. Interactive Data Grids & Smart Exports</h3>
+                        <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.6;"><strong>How to use:</strong> When a query returns a lot of rows, it automatically renders as a paginated, sortable, and searchable data grid. You can export any insight to CSV or beautifully formatted PDF, or Pin it to your custom Dashboard tab.</p>
                     </div>
                 </div>
             </section>
@@ -324,12 +353,18 @@
                         </div>
 
                         <div class="chat-input-panel">
-                            <div class="chat-controls" style="margin-bottom: 8px;">
-                                <label style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">Mode:</label>
-                                <select id="chat-mode-select" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 0; padding: 4px; font-size: 11px; outline: none;">
-                                    <option value="analysis">Read-Only Analysis (Safe)</option>
-                                    <option value="cleaning">Data Cleaning (Mutations Allowed)</option>
-                                </select>
+                            <div class="chat-controls" style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">Mode:</label>
+                                    <select id="chat-mode-select" style="background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 0; padding: 4px; font-size: 11px; outline: none;">
+                                        <option value="analysis">Read-Only Analysis (Safe)</option>
+                                        <option value="cleaning">Data Cleaning (Mutations Allowed)</option>
+                                        <option value="consultant">Consultant Mode (Reverse Q&A)</option>
+                                    </select>
+                                </div>
+                                <button id="start-interview-btn" class="secondary-btn" style="display: none; padding: 4px 12px; font-size: 11px; background: var(--blue); color: var(--white); border: none; border-radius: 4px; cursor: pointer;">
+                                    <i class="fa-solid fa-user-tie"></i> Start Interview
+                                </button>
                             </div>
                             <form id="chat-form" class="chat-form">
                                 <input type="text" id="chat-input" placeholder="Ask a question about your data..." required disabled>
